@@ -8,6 +8,10 @@ This is my collection of n8n workflows. Just started building this out, so it's 
 
 Instead of gatekeeping automation, I'm sharing what I build. Use them, break them, improve them.
 
+## Featured Workflows
+
+**[Ghost Automated Blog System](workflows/automation/ghost-automated-blog-system.md)** - Fully automated content pipeline that scrapes news, picks SEO topics with AI, writes articles with Claude, generates cover images, and publishes to Ghost. Runs hands-free every morning. The image upload logic alone is worth checking out if you're working with Ghost's API.
+
 ## Structure
 
 ```

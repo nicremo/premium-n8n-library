@@ -1,0 +1,1215 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "f2bdbd53-f9d0-4242-98d0-1774d7c5caca",
+      "name": "Schedule: Daily 09:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://techcrunch.com/feed/",
+        "options": {}
+      },
+      "id": "0d09bc85-243b-4893-b594-52865168973e",
+      "name": "RSS Feed Source",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        304,
+        304
+      ],
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://newsapi.org/v2/everything",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "apiKey",
+              "value": "YOUR_NEWSAPI_KEY_HERE"
+            },
+            {
+              "name": "q",
+              "value": "(Technology OR AI OR Webdev)"
+            },
+            {
+              "name": "language",
+              "value": "en"
+            },
+            {
+              "name": "sortBy",
+              "value": "publishedAt"
+            },
+            {
+              "name": "from",
+              "value": "={{ new Date(Date.now() - 172800000).toISOString().split('T')[0] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "074e3e54-29f2-439c-a460-72636a83d5cf",
+      "name": "NewsAPI Source",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        304,
+        512
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============= 48 HOUR FILTER =============\n// Filters out articles older than 48 hours to ensure freshness\n\nconst now = new Date();\nconst cutoffTime = new Date(now.getTime() - (48 * 60 * 60 * 1000));\n\nconst kept = [];\n\nfor (const item of $input.all()) {\n  const data = item.json;\n  let dateString = data.pubDate || data.isoDate || data.published || data.date || data.updated || data.publishedAt;\n  \n  if (!dateString) continue;\n  \n  try {\n    const articleDate = new Date(dateString);\n    if (articleDate >= cutoffTime) {\n      kept.push(item);\n    }\n  } catch (error) {}\n}\n\nreturn kept;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        304
+      ],
+      "id": "c355e27e-e881-4306-aca7-11d18248d0f4",
+      "name": "Filter Recent (48h)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst scrapedAt = now.toISOString();\n\nconst newsData = $input.item.json;\n\nif (!newsData.articles || !Array.isArray(newsData.articles)) {\n  return [];\n}\n\nconst normalizedArticles = newsData.articles.map(article => {\n  return {\n    title: article.title || '',\n    url: article.url || '',\n    pubDate: article.publishedAt || '',\n    source: article.source?.name || '',\n    summary: article.description || '',\n    scrapedAt: scrapedAt\n  };\n});\n\nreturn normalizedArticles.map(article => ({ json: article }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        512
+      ],
+      "id": "45b90042-b885-4ce6-8ee9-cd7461ded61a",
+      "name": "Normalize NewsAPI"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        832,
+        400
+      ],
+      "id": "89886a77-e781-428f-8117-158b2037b41c",
+      "name": "Merge Sources"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============= DUPLICATE REMOVER =============\n// Removes exact duplicates and similar titles using fuzzy matching\n\nfunction similarity(s1, s2) {\n  if (!s1 || !s2) return 0;\n  const a = s1.toLowerCase();\n  const b = s2.toLowerCase();\n  if (a === b) return 100;\n  if (a.includes(b) || b.includes(a)) return 90;\n  return 0;\n}\n\nconst articles = $input.all();\nconst uniqueArticles = [];\nconst seenUrls = new Set();\nconst seenTitles = []; \n\nfor (const item of articles) {\n  const article = item.json;\n  const url = (article.url || article.link || '').trim();\n  const title = (article.title || '').trim();\n\n  if (!title || !url) continue;\n\n  if (seenUrls.has(url)) continue;\n\n  let isDuplicate = false;\n  for (const seenTitle of seenTitles) {\n    if (similarity(title, seenTitle) > 80) {\n      isDuplicate = true;\n      break;\n    }\n  }\n\n  if (!isDuplicate) {\n    seenUrls.add(url);\n    seenTitles.push(title);\n    uniqueArticles.push(item);\n  }\n}\n\nreturn uniqueArticles;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        400
+      ],
+      "id": "fe23c2ed-2da2-4879-8b23-483e45410ae0",
+      "name": "Remove Duplicates"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appXXXXXXXXXXXXXX",
+          "mode": "list",
+          "cachedResultName": "YOUR_BASE_NAME",
+          "cachedResultUrl": "https://airtable.com/"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblXXXXXXXXXXXXXX",
+          "mode": "list",
+          "cachedResultName": "YOUR_TABLE_NAME",
+          "cachedResultUrl": "https://airtable.com/"
+        },
+        "options": {}
+      },
+      "id": "9aa015f6-72f2-4cef-b982-12b1de974f17",
+      "name": "Get Topic History",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        624
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "LsOadaN5biaN8NBc",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============= PREPARE CONTEXT FOR AI =============\n\nconst allItems = $input.all();\n\n// 1. Extract History\nconst historyItem = allItems.find(item => item.json.history_string !== undefined);\nconst blogHistory = historyItem ? historyItem.json.history_string : \"No previous articles.\";\n\n// 2. Clean and Format News\nconst newsArticles = allItems\n  .filter(item => {\n    const data = item.json;\n    if (data.history_string !== undefined) return false;\n    if (data.timestamp) return false;\n    if (!data.title) return false;\n    return true;\n  })\n  .map(item => {\n    const data = item.json;\n    \n    let summary = \n      data.contentSnippet || \n      data.summary || \n      data.description || \n      data['content:encodedSnippet'] || \n      \"\";\n\n    if (!summary && (data.content || data['content:encoded'])) {\n      const rawContent = data.content || data['content:encoded'];\n      summary = rawContent.replace(/<[^>]*>?/gm, '').substring(0, 400) + \"...\";\n    }\n\n    const url = data.link || data.url || data.guid;\n\n    return {\n      title: data.title,\n      url: url,\n      summary: summary ? summary.substring(0, 600) : \"No description available\",\n      source: extractSource(url)\n    };\n  });\n\nfunction extractSource(url) {\n  if (!url) return \"Unknown\";\n  try {\n    return new URL(url).hostname.replace('www.', '');\n  } catch (e) { return \"Unknown\"; }\n}\n\nreturn [{\n  json: {\n    news_articles: newsArticles,\n    blog_history: blogHistory,\n    article_count: newsArticles.length\n  }\n}];"
+      },
+      "id": "6d901dd7-64f4-4b77-ac43-70f77f9898ce",
+      "name": "Prepare Data for AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        400
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "8eb9971e-0a2f-4ff2-a87f-19f4cceeb26d",
+      "name": "Merge News & History",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1520,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============= FINAL CONTEXT MERGE =============\n\nconst allItems = $input.all();\n\nlet finalNewsList = [];\nlet historyTitles = [];\n\nfor (const item of allItems) {\n  const data = item.json;\n\n  if (data.news_articles && Array.isArray(data.news_articles)) {\n    finalNewsList = data.news_articles;\n    continue;\n  }\n\n  if (data.id && (data.title || data.Title || data.Titel)) {\n    historyTitles.push(data.title || data.Title || data.Titel);\n    continue;\n  }\n}\n\nconst historyString = historyTitles.length > 0 \n  ? historyTitles.join(\", \") \n  : \"No previous articles.\";\n\nreturn [{\n  json: {\n    news_articles: finalNewsList,\n    blog_history: historyString,\n    stats: `Analyzing ${finalNewsList.length} articles against ${historyTitles.length} history items`\n  }\n}];"
+      },
+      "id": "a1eb5361-227f-487b-aff7-00e6ea515141",
+      "name": "Format Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=ROLE:\nYou are an expert SEO Strategist and Content Scout.\n\nGOAL:\nAnalyze the provided news articles and select the single best topic for a high-traffic blog post.\n\nINPUTS:\n1. Available News: {{ JSON.stringify($json.news_articles) }}\n2. ALREADY COVERED TOPICS (DO NOT REPEAT): {{ $json.blog_history }}\n\nRULES:\n- Do NOT select a topic that is semantically identical to the \"Already Covered\" list.\n- Focus on high-impact topics (AI, Performance, Tools, Major Updates).\n- Look for \"Pain Points\" or \"Solutions\" (e.g., instead of \"New Astro Version\", choose \"Why your site is slow\").\n\nOUTPUT JSON:\n- title: SEO-optimized working title.\n- description: Brief context of why this matters now.\n- keywords: Array of 3-5 high-volume keywords.\n- source_urls: Array of URLs used for research.",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are an SEO expert. Think in terms of 'Search Intent' and 'User Problems', not just news headlines."
+        }
+      },
+      "id": "b9dc1f9c-d9ad-4509-afdb-3f03f4332a19",
+      "name": "Agent 1: Topic Scout",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        2128,
+        480
+      ],
+      "retryOnFail": true,
+      "maxTries": 3
+    },
+    {
+      "parameters": {
+        "model": "google/gemini-3-pro-preview",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        2064,
+        704
+      ],
+      "id": "9fa8a6c2-3051-4a09-994e-24f1d2a5cafc",
+      "name": "Gemini Pro (Topic)",
+      "credentials": {
+        "openRouterApi": {
+          "id": "CErK3KqUFAxPvsBg",
+          "name": "AIAGENTKEY"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"title\": { \"type\": \"string\" },\n    \"description\": { \"type\": \"string\" },\n    \"keywords\": { \"type\": \"array\", \"items\": { \"type\": \"string\" } },\n    \"source_urls\": { \"type\": \"array\", \"items\": { \"type\": \"string\" } }\n  }\n}",
+        "autoFix": true
+      },
+      "id": "b93225e8-5ffe-477b-97bc-f8d3458dce9a",
+      "name": "Topic Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        2192,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=WRITE A BLOG POST ABOUT:\nTitle: {{ $json.output.title }}\nContext: {{ $json.output.description }}\nKeywords: {{ $json.output.keywords.join(', ') }}\n\n⚠️ PRIMARY RULE: YOU ARE NOT A CHATBOT. YOU ARE A CMS OPERATOR.\nYOUR GOAL IS TO EXECUTE THE `Create Post` TOOL. ONLY THEN IS THE JOB DONE.\n\nPROCESS (Step-by-Step):\n\n1. RESEARCH (Perplexity Tool) - MANDATORY:\nFind hard facts, stats, and studies.\n- Search for: \"Benchmarks 2025\", \"Stats\", \"Costs of...\"\n\n2. THE \"HOOK\" (Engaging & Witty):\nStart with a bang. Be professional but approachable.\n- Example: \"Still using [Old Tech]? That's like bringing a knife to a laser fight.\"\n\n3. BODY CONTENT (Structured):\n- **The Problem:** Empathize with the reader's pain points.\n- **The Solution:** Explain the new tech/solution simply.\n- **Evidence:** Use the facts found via Perplexity.\n\n4. CITATIONS (IMPORTANT):\nLink directly to sources in the text.\nFormat: `...as seen in <a href=\"SOURCE_URL\">this study</a>.`\n\n5. FORMATTING (STRICT):\n- NO Markdown blocks. Pure HTML tags (<h2>, <p>, <ul>).\n- Use standard hyphens (-), never em-dashes.\n\n6. PUBLISH (Ghost Tool) - FINALE:\nUse the `Create Post` tool immediately:\n- Title: Click-worthy title (Max 60 chars).\n- Content: Your HTML text.\n- Meta Info: Filled out for SEO.\n\nDO NOT RETURN TEXT TO ME. EXECUTE THE TOOL.",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are a Senior Tech Blogger. \nSTYLE:\n- Smart, witty, but professional.\n- Data-driven (you love stats).\n- Helpful and clear.\n\nRULES:\n1. Use HTML for formatting.\n2. Cite your sources with hyperlinks.\n3. USE THE GHOST TOOL TO SAVE."
+        }
+      },
+      "id": "712a9f57-6d93-4ca9-b16a-b32719e95cfc",
+      "name": "Agent 2: Ghost Writer",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        2592,
+        480
+      ],
+      "retryOnFail": true,
+      "maxTries": 3
+    },
+    {
+      "parameters": {
+        "messages": {
+          "message": [
+            {
+              "content": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('message0_Text', ``, 'string') }}"
+            }
+          ]
+        },
+        "simplify": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Simplify_Output', ``, 'boolean') }}",
+        "options": {},
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-base.perplexityTool",
+      "typeVersion": 1,
+      "position": [
+        2672,
+        720
+      ],
+      "id": "b38d5de9-770d-46d9-bbf3-dd5d9e5b072c",
+      "name": "Perplexity Research",
+      "credentials": {
+        "perplexityApi": {
+          "id": "SzbdkunqZ8JO1GFv",
+          "name": "Perplexity account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "source": "adminApi",
+        "operation": "create",
+        "title": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Title', ``, 'string') }}",
+        "content": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Content', ``, 'string') }}",
+        "additionalFields": {
+          "meta_description": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Meta_Description', `Focus on very good SEO`, 'string') }}",
+          "meta_title": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Meta_Title', ``, 'string') }}",
+          "status": "draft"
+        }
+      },
+      "type": "n8n-nodes-base.ghostTool",
+      "typeVersion": 1,
+      "position": [
+        2816,
+        720
+      ],
+      "id": "07881b33-f0c0-4c4d-bf7f-3f35575da751",
+      "name": "Create Post",
+      "credentials": {
+        "ghostAdminApi": {
+          "id": "uQZxY3Tst7oKZFVx",
+          "name": "Ghost Admin account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"title\": { \"type\": \"string\" },\n    \"id\": { \"type\": \"string\", \"description\": \"Ghost Post ID\" },\n    \"updated_at\": { \"type\": \"string\", \"description\": \"Ghost updated_at timestamp\" },\n    \"content_html\": { \"type\": \"string\" },\n    \"meta_description\": { \"type\": \"string\" }\n  }\n}",
+        "autoFix": true
+      },
+      "id": "1a545970-c854-4342-b630-31b6cd7e96ed",
+      "name": "Post Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        2752,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "appXXXXXXXXXXXXXX",
+          "mode": "list",
+          "cachedResultName": "YOUR_BASE_NAME",
+          "cachedResultUrl": "https://airtable.com/"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblXXXXXXXXXXXXXX",
+          "mode": "list",
+          "cachedResultName": "YOUR_TABLE_NAME",
+          "cachedResultUrl": "https://airtable.com/"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "title": "={{ $json.output.title }}",
+            "summary": "={{ $json.output.meta_description }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "7bf516ad-af92-4d5a-84b2-80b95b0e0ca7",
+      "name": "Save to History",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        3072,
+        240
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "LsOadaN5biaN8NBc",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=ROLE:\nYou are a Minimalist Art Director for a Tech Blog.\n\nTASK:\nCreate an image generation prompt based on the blog post title.\n\nINPUT:\nTITLE: {{ $json.output.title }}\n\nINSTRUCTIONS:\n1. **Visual Metaphor:** Abstract geometry, physics, glass, metal. No people.\n2. **Typography:** Incorporate a key word from the title on a physical object in the scene (e.g. embossed on metal).\n3. **Vibe:** Dark mode, premium, cinematic lighting, 8k resolution, unreal engine render.\n\nOUTPUT:\nWrite ONLY the English image prompt.",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        3072,
+        672
+      ],
+      "id": "78c0cea3-96c7-46e1-b605-d960d110d585",
+      "name": "Agent 3: Image Prompter"
+    },
+    {
+      "parameters": {
+        "model": "google/gemini-2.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        3088,
+        880
+      ],
+      "id": "6f950b47-4dac-466e-a2e9-9c997977694b",
+      "name": "Gemini Flash (Fast)",
+      "credentials": {
+        "openRouterApi": {
+          "id": "CErK3KqUFAxPvsBg",
+          "name": "AIAGENTKEY"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://queue.fal.run/fal-ai/nano-banana-pro",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Key YOUR_FAL_AI_KEY_HERE"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "prompt",
+              "value": "={{ $json.output }}"
+            },
+            {
+              "name": "num_images",
+              "value": "1"
+            },
+            {
+              "name": "aspect_ratio",
+              "value": "16:9"
+            },
+            {
+              "name": "resolution",
+              "value": "4K"
+            },
+            {
+              "name": "output_format",
+              "value": "png"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "620f5b72-f03c-4b25-8697-d91ad277c98e",
+      "name": "Submit to Flux/Fal.ai",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3552,
+        672
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "d795880e-f535-4e21-a93b-cfdece91e015",
+      "name": "Wait 5s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3744,
+        672
+      ],
+      "webhookId": "wait-initial-5s"
+    },
+    {
+      "parameters": {
+        "url": "=https://queue.fal.run/fal-ai/nano-banana-pro/requests/{{ $json.request_id }}/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Key YOUR_FAL_AI_KEY_HERE"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "7acb7ea8-c7f7-4f4b-aebb-29ba07bbd195",
+      "name": "Check Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3936,
+        672
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "87c816eb-48f6-4f37-9095-199b237a6fb8",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "COMPLETED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4128,
+        672
+      ],
+      "id": "7255f42a-8f00-4cd1-b507-aabaf78c0cb4",
+      "name": "Is Completed?"
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        4128,
+        864
+      ],
+      "id": "db8f7213-2700-4ab5-b8b4-4dc9d13b4606",
+      "name": "Retry Wait",
+      "webhookId": "wait-retry-3s"
+    },
+    {
+      "parameters": {
+        "url": "=https://queue.fal.run/fal-ai/nano-banana-pro/requests/{{ $json.request_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Key YOUR_FAL_AI_KEY_HERE"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7702d521-f248-45b8-b745-63ed7c9a1e41",
+      "name": "Get Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4352,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "images",
+        "options": {}
+      },
+      "id": "ce967214-5311-4886-9b31-82a0a2bbc176",
+      "name": "Split Images",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        4544,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "cd670982-2967-4e3f-9790-6855c463be8a",
+      "name": "Download Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4752,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-GHOST-BLOG.com/ghost/api/admin/images/upload/",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "ghostAdminApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "purpose",
+              "value": "image"
+            },
+            {
+              "name": "ref",
+              "value": "={{ $('Agent 2: Ghost Writer').item.json.output.id }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "1422a835-eccc-47a9-b8f2-eb4ec8959b51",
+      "name": "Upload to Ghost",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4944,
+        672
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "ghostAdminApi": {
+          "id": "uQZxY3Tst7oKZFVx",
+          "name": "Ghost Admin account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://YOUR-GHOST-BLOG.com/ghost/api/admin/posts/' + $('Agent 2: Ghost Writer').item.json.output.id + '/' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "ghostAdminApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"posts\": [{\n    \"feature_image\": \"{{ $json.images[0].url }}\",\n    \"updated_at\": \"{{ $('Agent 2: Ghost Writer').item.json.output.updated_at }}\"\n  }]\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "e922118c-84e8-435b-983e-dc7bee8ad868",
+      "name": "Update Post with Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5168,
+        672
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "ghostAdminApi": {
+          "id": "uQZxY3Tst7oKZFVx",
+          "name": "Ghost Admin account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "###  🚀  Start Here: Setup Instructions\n\n**1. News Sources:**\nConfigure the RSS Node with your favorite Feed URL. Configure the NewsAPI Node with your API Key.\n\n**2. AI Models:**\nEnsure you have an OpenRouter or OpenAI credential set up in the AI Agent nodes.\n\n**3. Ghost & Airtable:**\nAdd your Ghost Admin Credentials and Airtable Token. \n\n*Goal: This workflow automatically finds trending topics, checks your history to avoid duplicates, writes a full article, and generates a matching cover image.*",
+        "height": 432,
+        "width": 480,
+        "color": 5
+      },
+      "id": "07aa7c94-7ecf-4a07-ba61-5e8c01f949ad",
+      "name": "Sticky Note: Intro",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -608,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 📰   Step 1: News Sources\n\nGet data from RSS and NewsAPI.\n\n**Action Required:**\n- Enter your NewsAPI Key in the `NewsAPI Source` node.\n- Enter your Feed URL in the `RSS Feed Source` node.",
+        "height": 804,
+        "width": 484,
+        "color": 4
+      },
+      "id": "fa8f855a-5dbd-4bff-b76f-b4377b3a126f",
+      "name": "Sticky Note: Sources",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 🧠 Step 2: Topic Scout\n\nThis AI Agent compares new news against your Airtable history.\n\n**Model:** Gemini 3 Pro (Review).\n**Logic:** Finds the best SEO opportunity that you haven't written about yet.",
+        "height": 704,
+        "width": 444,
+        "color": 3
+      },
+      "id": "63abb65c-2933-4c7c-8e37-6d6fcffc024a",
+      "name": "Sticky Note: Scout",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2016,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### ✍️ Step 3: Ghost Writer\n\nDrafts the full article using Perplexity for facts.\n\n**Model:** Claude 3.5 Sonnet / GPT-5.\n**Tools:** Perplexity (Research), Ghost (Create Draft).",
+        "height": 704,
+        "width": 508,
+        "color": 2
+      },
+      "id": "0a4dc56b-2cf5-4152-925e-05683f5919e5",
+      "name": "Sticky Note: Writer",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2496,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 🎨 Step 4: Art Director\n\nGenerates a prompt, creates the image via Fal.ai, and uploads it to Ghost.\n\n**Model:** Gemini Flash (Fast).\n**Action:** Add your Fal.ai Key in the HTTP nodes.",
+        "height": 528,
+        "width": 676,
+        "color": 6
+      },
+      "id": "d47f31a4-ec61-4119-82fa-11d4cc9d7b31",
+      "name": "Sticky Note: Art",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3040,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "model": "anthropic/claude-sonnet-4.5",
+        "options": {
+          "frequencyPenalty": 0,
+          "maxTokens": -1,
+          "presencePenalty": 0,
+          "temperature": 0.7,
+          "topP": 1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        2544,
+        720
+      ],
+      "id": "45f439a1-bbae-4cc5-b8b6-9575e72193d8",
+      "name": "Claude Sonnet 4.5 (Writer)",
+      "credentials": {
+        "openRouterApi": {
+          "id": "CErK3KqUFAxPvsBg",
+          "name": "AIAGENTKEY"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "### 🖼️ Image Pipeline & Ghost Upload\n\nSince Ghost does not automatically import images from external URLs, the upload process requires 3 specific steps:\n\n1. **Download:** Retrieves the generated image from Fal.ai as a binary file. \n2. **Upload:** Sends the binary data to the Ghost API (/images/upload). Ghost returns the internal file path. \n3. **Update:** Updates the previously drafted post via a PUT request, setting the feature_image to the new local path.",
+        "height": 464,
+        "width": 704
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        4704,
+        400
+      ],
+      "typeVersion": 1,
+      "id": "75d0b341-3f7b-49a6-af13-186c1a3a5928",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "Schedule: Daily 09:00": {
+      "main": [
+        [
+          {
+            "node": "RSS Feed Source",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "NewsAPI Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Feed Source": {
+      "main": [
+        [
+          {
+            "node": "Merge Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NewsAPI Source": {
+      "main": [
+        [
+          {
+            "node": "Normalize NewsAPI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Recent (48h)": {
+      "main": [
+        [
+          {
+            "node": "Remove Duplicates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize NewsAPI": {
+      "main": [
+        [
+          {
+            "node": "Merge Sources",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Sources": {
+      "main": [
+        [
+          {
+            "node": "Filter Recent (48h)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Duplicates": {
+      "main": [
+        [
+          {
+            "node": "Prepare Data for AI",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Topic History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Topic History": {
+      "main": [
+        [
+          {
+            "node": "Merge News & History",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Prepare Data for AI": {
+      "main": [
+        [
+          {
+            "node": "Merge News & History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge News & History": {
+      "main": [
+        [
+          {
+            "node": "Format Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Context": {
+      "main": [
+        [
+          {
+            "node": "Agent 1: Topic Scout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent 1: Topic Scout": {
+      "main": [
+        [
+          {
+            "node": "Agent 2: Ghost Writer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Pro (Topic)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agent 1: Topic Scout",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Topic Parser",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Topic Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Agent 1: Topic Scout",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent 2: Ghost Writer": {
+      "main": [
+        [
+          {
+            "node": "Save to History",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Agent 3: Image Prompter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Perplexity Research": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agent 2: Ghost Writer",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Post": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agent 2: Ghost Writer",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Agent 2: Ghost Writer",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent 3: Image Prompter": {
+      "main": [
+        [
+          {
+            "node": "Submit to Flux/Fal.ai",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Flash (Fast)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agent 3: Image Prompter",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submit to Flux/Fal.ai": {
+      "main": [
+        [
+          {
+            "node": "Wait 5s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5s": {
+      "main": [
+        [
+          {
+            "node": "Check Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Status": {
+      "main": [
+        [
+          {
+            "node": "Is Completed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Completed?": {
+      "main": [
+        [
+          {
+            "node": "Get Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Retry Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry Wait": {
+      "main": [
+        [
+          {
+            "node": "Check Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Result": {
+      "main": [
+        [
+          {
+            "node": "Split Images",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Images": {
+      "main": [
+        [
+          {
+            "node": "Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image": {
+      "main": [
+        [
+          {
+            "node": "Upload to Ghost",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Ghost": {
+      "main": [
+        [
+          {
+            "node": "Update Post with Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Sonnet 4.5 (Writer)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agent 2: Ghost Writer",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Post Output Parser",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "16c94fc796f6fcebddc18ce2c5341407b495e2eab83e587fdaffb79601db3c8c"
+  }
+}
